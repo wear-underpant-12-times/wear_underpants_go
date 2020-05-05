@@ -1,18 +1,23 @@
-package main
+package server
 
 import (
-	"net"
-	"fmt"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
-	"time"
+	"log"
+	"net"
+	"strconv"
+
+	"github.com/wear_underpants/utils"
 )
 
 var (
-	Commands = []string{"CONNECT", "BIND", "UDP ASSOCIATE"}
+	port = "8082"
+	h    = false
+	// Commands = []string{"CONNECT", "BIND", "UDP ASSOCIATE"}
 	AddrType = []string{"", "IPv4", "", "Domain", "IPv6"}
-	Conns    = make([]net.Conn, 0)
-	Verbose  = false
 
 	errAddrType      = errors.New("socks addr type not supported")
 	errVer           = errors.New("socks version not supported")
@@ -20,85 +25,159 @@ var (
 	errAuthExtraData = errors.New("socks authentication get extra data")
 	errReqExtraData  = errors.New("socks request get extra data")
 	errCmd           = errors.New("socks only support connect command")
+
+	udpListener = &net.UDPConn{}
 )
 
 func shake(conn net.Conn) (target string, err error) {
-	buf := make([]byte, 258)
-	var n int
-	if n, err = io.ReadAtLeast(conn, buf, 1); err != nil {
-		panic("err")
-		return
+	lenBuf := make([]byte, 1)
+	if _, err = io.ReadFull(conn, lenBuf); err != nil {
+		log.Println(err)
+		return "", err
 	}
-
-	dmLen := int(buf[0])
-	msgLen := dmLen + 1
-	// fmt.Println(msgLen)
-	if n == msgLen {
-	} else if n < msgLen {
-		if _, err = io.ReadFull(conn, buf[n:msgLen]); err != nil {
-			fmt.Println("get full failed")
-			return
-		}
-	} else {
-		fmt.Printf("dmLen %v, getLen %v\n", dmLen, n)
-		// return errors.New("auth error")
+	buf := make([]byte, int(lenBuf[0]))
+	if _, err = io.ReadFull(conn, buf); err != nil {
+		log.Println("get full failed")
+		return "", err
 	}
-	return string(buf[1: 1+dmLen]), nil
+	addr, err := utils.UnPackData(buf)
+	if err != nil {
+		return "", err
+	}
+	return string(addr), nil
 }
 
-func netCopy(input, output net.Conn) (err error) {
-	buf := make([]byte, 8192)
-	for {
-		count, err := input.Read(buf)
+func handleUDPConn(conn *net.UDPConn) {
+	data := make([]byte, 65535)
+	n, remoteAddr, err := conn.ReadFromUDP(data)
+	go func() {
 		if err != nil {
-			if err == io.EOF && count > 0 {
-				output.Write(buf[:count])
-			}
-			break
+			fmt.Println("failed to read UDP msg because of ", err.Error())
+			return
 		}
-		if count > 0 {
-			output.Write(buf[:count])
+		log.Println("recieve udp request:", remoteAddr, data[:n])
+		// 发送到udp(基本都是dns)服务器
+		srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
+		dstAddr := &net.UDPAddr{IP: net.IP(data[4:8]), Port: int(binary.BigEndian.Uint16(data[8:10]))}
+		dnsConn, err := net.DialUDP("udp", srcAddr, dstAddr)
+		if err != nil {
+			log.Println(err)
 		}
-	}
-	return
+		defer dnsConn.Close()
+		dnsConn.Write(data[10:n])
+		// 返回
+		n, err = dnsConn.Read(data)
+		if err != nil {
+			log.Println("get udp data failed", err)
+		}
+		res := base64.StdEncoding.EncodeToString(data[:n])
+		if err != nil {
+			log.Println("pack udp data error:", data[:n])
+		}
+
+		// res, _ := utils.MergeBytes([][]byte{
+		// 	[]byte{112},
+		// 	data[:n],
+		// })
+		_, err = conn.WriteToUDP([]byte(res), remoteAddr)
+		log.Println("return udp", err, res)
+	}()
 }
 
 func handConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		conn.Close()
+		// log.Println("close client connection:", conn)
+	}()
 	addr, err := shake(conn)
 	if err != nil {
-		fmt.Println("shake error", err)
+		log.Println("shake error", err)
 		return
 	}
-	fmt.Println(addr)
-	remoteConn, err := net.DialTimeout("tcp", addr, time.Duration(time.Second*15))
+	log.Println(conn.RemoteAddr(), "->", addr)
+	remoteConn, err := net.Dial("tcp", addr)
 	if err != nil {
-		fmt.Println("connect server error:", addr, err)
+		log.Println("connect server error:", addr, err)
 		return
 	}
-	defer remoteConn.Close()
-	go netCopy(conn, remoteConn)
-	netCopy(remoteConn, conn)
-
-	// host, err := parseAddr(conn)
-	// if err != nil {
-	// 	panic("socks addr parse error")
-	// }
-	// pipWhenClose(conn, host)
+	defer func() {
+		remoteConn.Close()
+		// log.Println("close remote connection:", addr)
+	}()
+	go utils.NetDecodeCopy(conn, remoteConn)
+	utils.NetEncodeCopy(remoteConn, conn)
 }
 
-func main() {
-	l, err := net.Listen("tcp", "0.0.0.0:8081")
+// func init() {
+// 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
+// 	flag.BoolVar(&h, "h", false, "this help")
+// 	flag.StringVar(&port, "p", "8082", "port")
+// 	flag.Parse()
+// }
+
+// Start Server
+func StartServer(port string) {
+	iPort, err := strconv.Atoi(port)
 	if err != nil {
 		panic(err)
-		return
 	}
+	// tcp服务
+	l, err := net.Listen("tcp", "0.0.0.0:"+port)
+	if err != nil {
+		panic(err)
+	}
+	// udp服务，与tcp在同一端口
+	udpListener, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: iPort})
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("start server on %s ...", port)
+	go func() {
+		for {
+			handleUDPConn(udpListener)
+		}
+	}()
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			continue
 		}
 		go handConn(conn)
 	}
 }
+
+// func main() {
+// 	if h {
+// 		flag.Usage()
+// 		return
+// 	}
+// 	iPort, err := strconv.Atoi(port)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	// tcp服务
+// 	l, err := net.Listen("tcp", "0.0.0.0:"+port)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	// udp服务，与tcp在同一端口
+// 	udpListener, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: iPort})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	log.Printf("start server on %s ...", port)
+// 	go func() {
+// 		for {
+// 			handleUDPConn(udpListener)
+// 		}
+// 	}()
+// 	for {
+// 		conn, err := l.Accept()
+// 		if err != nil {
+// 			log.Println(err)
+// 			continue
+// 		}
+// 		go handConn(conn)
+// 	}
+// }

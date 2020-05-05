@@ -1,0 +1,6 @@
+*.exe*
+client/client*
+server/server*
+test
+*.jar
+*.aar
