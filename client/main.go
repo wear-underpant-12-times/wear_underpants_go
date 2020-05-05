@@ -113,12 +113,6 @@ func pipWhenClose(conn net.Conn, target string) {
 	bAddr := []byte(target)
 	msg := append(utils.Int8ToBytes(len(bAddr)), bAddr...)
 	serverConn.Write(msg)
-	// remoteConn, err := net.DialTimeout("tcp", target, time.Duration(time.Second*15))
-	// if err != nil {
-	// 	fmt.Println("connect remote error:", target, err)
-	// 	return
-	// }
-	// tcpAddr := serverConn.LocalAddr().(*net.TCPAddr)
 	tcpAddr := serverConn.LocalAddr().(*net.TCPAddr)
 
 	req := make([]byte, 256)

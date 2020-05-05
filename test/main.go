@@ -2,21 +2,25 @@ package main
 
 import (
 	"fmt"
-	"../utils"
+	"io"
+	"strings"
+	"bytes"
+	"encoding/binary"
 )
 
+func Int16ToBytes(n int) []byte {
+    data := int16(n)
+    bytebuf := bytes.NewBuffer([]byte{})
+    binary.Write(bytebuf, binary.BigEndian, data)
+    return bytebuf.Bytes()
+}
 
 
 func main() {
-	// s := "hello"
-	buf := make([]byte, 2)
-	buf1 := append(buf, []byte("helloDY汉语")...)
-	fmt.Println(string(buf1[2:len(buf1)]))
+	
+	r := strings.NewReader("hello")
+	buf := make([]byte, 14)
 
-	bAddr := []byte("google.com:443")
-	lenHeader := utils.Int8ToBytes(len(bAddr))
-	
-	// msg := append([]byte{len(bAddr)}, bAddr)
-	fmt.Println(lenHeader)
-	
+	io.ReadAtLeast(r, buf, 4)
+	fmt.Println(buf)
 }
