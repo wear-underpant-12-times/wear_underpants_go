@@ -1,11 +1,13 @@
 package main
 
 import (
-	"net"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"time"
+
+	"../utils"
 )
 
 var (
@@ -26,7 +28,7 @@ func shake(conn net.Conn) (target string, err error) {
 	buf := make([]byte, 258)
 	var n int
 	if n, err = io.ReadAtLeast(conn, buf, 1); err != nil {
-		panic("err")
+		fmt.Println(err)
 		return
 	}
 
@@ -43,7 +45,7 @@ func shake(conn net.Conn) (target string, err error) {
 		fmt.Printf("dmLen %v, getLen %v\n", dmLen, n)
 		// return errors.New("auth error")
 	}
-	return string(buf[1: 1+dmLen]), nil
+	return string(buf[1 : 1+dmLen]), nil
 }
 
 func netCopy(input, output net.Conn) (err error) {
@@ -77,21 +79,14 @@ func handConn(conn net.Conn) {
 		return
 	}
 	defer remoteConn.Close()
-	go netCopy(conn, remoteConn)
-	netCopy(remoteConn, conn)
-
-	// host, err := parseAddr(conn)
-	// if err != nil {
-	// 	panic("socks addr parse error")
-	// }
-	// pipWhenClose(conn, host)
+	go utils.NetDecodeCopy(conn, remoteConn)
+	utils.NetEncodeCopy(remoteConn, conn)
 }
 
 func main() {
-	l, err := net.Listen("tcp", "0.0.0.0:8081")
+	l, err := net.Listen("tcp", "0.0.0.0:8082")
 	if err != nil {
 		panic(err)
-		return
 	}
 	for {
 		conn, err := l.Accept()

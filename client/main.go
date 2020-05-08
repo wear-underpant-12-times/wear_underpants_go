@@ -1,13 +1,14 @@
 package main
 
 import (
-	"net"
-	"fmt"
-	"errors"
-	"time"
 	"encoding/binary"
-	"strconv"
+	"errors"
+	"fmt"
 	"io"
+	"net"
+	"strconv"
+	"time"
+
 	"../utils"
 )
 
@@ -84,7 +85,7 @@ func parseAddr(conn net.Conn) (host string, err error) {
 	if n == reqLen {
 
 	} else if n < reqLen {
-		if _, err = io.ReadFull(conn, buf[n: reqLen]); err != nil {
+		if _, err = io.ReadFull(conn, buf[n:reqLen]); err != nil {
 			return
 		}
 	} else {
@@ -94,18 +95,18 @@ func parseAddr(conn net.Conn) (host string, err error) {
 
 	switch buf[3] {
 	case 3:
-		host = string(buf[5: 5 + buf[4]])
+		host = string(buf[5 : 5+buf[4]])
 	}
 
-	port := binary.BigEndian.Uint16(buf[reqLen-2: reqLen])
+	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 	// fmt.Println(host, buf[reqLen-2: reqLen], port)
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-	
+
 	return
 }
 
 func pipWhenClose(conn net.Conn, target string) {
-	serverConn, err := net.DialTimeout("tcp", "127.0.0.1:8081", time.Duration(time.Second*15))
+	serverConn, err := net.DialTimeout("tcp", "127.0.0.1:8082", time.Duration(time.Second*15))
 	if err != nil {
 		fmt.Println("connect server error:", target, err)
 		return
@@ -124,54 +125,40 @@ func pipWhenClose(conn net.Conn, target string) {
 	pindex := 4
 	for _, b := range ip {
 		req[pindex] = b
-		pindex += 1
+		pindex++
 	}
 	req[pindex] = byte((tcpAddr.Port >> 8) & 0xff)
 	req[pindex+1] = byte(tcpAddr.Port & 0xff)
 	conn.Write(req[0 : pindex+2])
 	defer serverConn.Close()
-	go netCopy(conn, serverConn)
-	netCopy(serverConn, conn)
-}
-
-func netCopy(input, output net.Conn) (err error) {
-	buf := make([]byte, 8192)
-	for {
-		count, err := input.Read(buf)
-		if err != nil {
-			if err == io.EOF && count > 0 {
-				output.Write(buf[:count])
-			}
-			break
-		}
-		if count > 0 {
-			output.Write(buf[:count])
-		}
-	}
-	return
+	go utils.NetEncodeCopy(conn, serverConn)
+	utils.NetDecodeCopy(serverConn, conn)
 }
 
 func handConn(conn net.Conn) {
 	defer conn.Close()
 	if err := shake(conn); err != nil {
-		panic("socks handshake error")
+		fmt.Println("socks handshake error")
+		return
 	}
 
 	host, err := parseAddr(conn)
 	if err != nil {
-		panic("socks addr parse error")
+		fmt.Println("socks addr parse error")
+		return
 	}
 	pipWhenClose(conn, host)
 }
 
 func main() {
-	l, err := net.Listen("tcp", "0.0.0.0:8080")
+	l, err := net.Listen("tcp", "127.0.0.1:8081")
 	if err != nil {
 		panic(err)
-		return
 	}
+	fmt.Println("start client...")
 	for {
 		conn, err := l.Accept()
+		fmt.Println("connect")
 		if err != nil {
 			fmt.Println(err)
 			continue
