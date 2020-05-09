@@ -6,11 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 )
 
-var commonkey = []byte("nanjishidu170416")
+var commonkey = []byte("0123456789170426")
 
 func AesEncrypt(plaintext string) (string, error) {
 	block, err := aes.NewCipher(commonkey)
@@ -27,6 +26,7 @@ func AesEncrypt(plaintext string) (string, error) {
 	return hex.EncodeToString(ciphertext), nil
 
 }
+
 func AesDecrypt(d string) (string, error) {
 	ciphertext, err := hex.DecodeString(d)
 	if err != nil {
@@ -41,7 +41,7 @@ func AesDecrypt(d string) (string, error) {
 	}
 	iv := ciphertext[:aes.BlockSize]
 	ciphertext = ciphertext[aes.BlockSize:]
-	fmt.Println(len(ciphertext), len(iv))
+	// fmt.Println(len(ciphertext), len(iv))
 	cipher.NewCFBDecrypter(block, iv).XORKeyStream(ciphertext, ciphertext)
 	return string(ciphertext), nil
 }

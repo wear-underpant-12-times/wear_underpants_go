@@ -1,11 +1,48 @@
 package utils
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 )
+
+func PackHeader(data []byte) (msgData []byte, err error) {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	encryptoS, err := AesEncrypt(encoded)
+	if err != nil {
+		return nil, err
+	}
+	encryptoB := []byte(encryptoS)
+	dataLen := Int8ToBytes(len(encryptoB))
+	msg := append(dataLen, encryptoB...)
+	return msg, nil
+}
+
+func PackData(data []byte) (msgData []byte, err error) {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	encryptoS, err := AesEncrypt(encoded)
+	if err != nil {
+		return nil, err
+	}
+	encryptoB := []byte(encryptoS)
+	dataLen := Int16ToBytes(len(encryptoB))
+	msg := append(dataLen, encryptoB...)
+	return msg, nil
+}
+
+func UnPackData(data []byte) (msg []byte, err error) {
+	decryptoS, err := AesDecrypt(string(data))
+	if err != nil {
+		return nil, err
+	}
+	decoded1, err := base64.StdEncoding.DecodeString(decryptoS)
+	if err != nil {
+		return nil, err
+	}
+	return decoded1, nil
+}
 
 func NetEncodeCopy(input net.Conn, output net.Conn) (err error) {
 	buf := make([]byte, 8192)
@@ -13,16 +50,20 @@ func NetEncodeCopy(input net.Conn, output net.Conn) (err error) {
 		count, err := input.Read(buf)
 		if err != nil {
 			if err == io.EOF && count > 0 {
-				header := Int16ToBytes(count)
-				msg := append(header, buf[:count]...)
-				output.Write(msg)
+				data, err := PackData(buf[:count])
+				if err != nil {
+					continue
+				}
+				output.Write(data)
 			}
 			break
 		}
-		header := Int16ToBytes(count)
-		msg := append(header, buf[:count]...)
 		if count > 0 {
-			output.Write(msg)
+			data, err := PackData(buf[:count])
+			if err != nil {
+				continue
+			}
+			output.Write(data)
 		}
 	}
 	return
@@ -47,7 +88,12 @@ func NetDecodeCopy(input net.Conn, output net.Conn) (err error) {
 			break
 		}
 		if n > 0 {
-			output.Write(dataBuf)
+			upData, err := UnPackData(dataBuf)
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				output.Write(upData)
+			}
 		}
 	}
 	return

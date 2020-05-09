@@ -45,7 +45,11 @@ func shake(conn net.Conn) (target string, err error) {
 		fmt.Printf("dmLen %v, getLen %v\n", dmLen, n)
 		// return errors.New("auth error")
 	}
-	return string(buf[1 : 1+dmLen]), nil
+	addr, err := utils.UnPackData(buf[1 : 1+dmLen])
+	if err != nil {
+		return "", err
+	}
+	return string(addr), nil
 }
 
 func netCopy(input, output net.Conn) (err error) {

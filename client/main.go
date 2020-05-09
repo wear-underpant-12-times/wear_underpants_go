@@ -26,6 +26,10 @@ var (
 	errCmd           = errors.New("socks only support connect command")
 )
 
+const (
+	wearServerAddr = "127.0.0.1:8082" //"23.106.157.33:8082"
+)
+
 func shake(conn net.Conn) (err error) {
 	buf := make([]byte, 258)
 	var n int
@@ -105,15 +109,19 @@ func parseAddr(conn net.Conn) (host string, err error) {
 	return
 }
 
-func pipWhenClose(conn net.Conn, target string) {
-	serverConn, err := net.DialTimeout("tcp", "127.0.0.1:8082", time.Duration(time.Second*15))
+func pipWhenClose(conn net.Conn, target string) error {
+	serverConn, err := net.DialTimeout("tcp", wearServerAddr, time.Duration(time.Second*15))
 	if err != nil {
 		fmt.Println("connect server error:", target, err)
-		return
+		return err
 	}
 	bAddr := []byte(target)
-	msg := append(utils.Int8ToBytes(len(bAddr)), bAddr...)
-	serverConn.Write(msg)
+	packbAddr, err := utils.PackHeader(bAddr)
+	if err != nil {
+		return err
+	}
+	// msg := append(utils.Int8ToBytes(len(bAddr)), bAddr...)
+	serverConn.Write(packbAddr)
 	tcpAddr := serverConn.LocalAddr().(*net.TCPAddr)
 
 	req := make([]byte, 256)
@@ -133,6 +141,7 @@ func pipWhenClose(conn net.Conn, target string) {
 	defer serverConn.Close()
 	go utils.NetEncodeCopy(conn, serverConn)
 	utils.NetDecodeCopy(serverConn, conn)
+	return nil
 }
 
 func handConn(conn net.Conn) {
