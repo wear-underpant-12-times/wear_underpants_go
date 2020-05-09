@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -23,11 +24,10 @@ var (
 	errAuthExtraData = errors.New("socks authentication get extra data")
 	errReqExtraData  = errors.New("socks request get extra data")
 	errCmd           = errors.New("socks only support connect command")
-)
 
-const (
-	wearServerAddr = "127.0.0.1:8082" //"23.106.157.33:8082"
-	port           = "8081"
+	h              = false
+	localProxyPort = "8081"
+	wearServerAddr = "23.106.157.33:8082"
 )
 
 func shake(conn net.Conn) (err error) {
@@ -162,16 +162,24 @@ func handConn(conn net.Conn) {
 
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
-	return
+	flag.BoolVar(&h, "h", false, "this help")
+	flag.StringVar(&localProxyPort, "p", "8081", "local socks5 port")
+	flag.StringVar(&wearServerAddr, "addr", "127.0.0.1:8082", "remote addr:port")
+	flag.Parse()
+
 }
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
-	l, err := net.Listen("tcp", "127.0.0.1:"+port)
+	if h {
+		flag.Usage()
+		return
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:"+localProxyPort)
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("start client on %s ...", port)
+	log.Printf("start client on %s ...", localProxyPort)
+	log.Printf("wear server %s", wearServerAddr)
 	for {
 		conn, err := l.Accept()
 		if err != nil {
