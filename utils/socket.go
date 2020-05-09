@@ -74,8 +74,7 @@ func NetDecodeCopy(input net.Conn, output net.Conn) (err error) {
 	for {
 		n, err := io.ReadAtLeast(input, buf, 2)
 		if err != nil {
-			fmt.Println(err)
-			break
+			return err
 		}
 		if n < 2 {
 			break
@@ -84,8 +83,7 @@ func NetDecodeCopy(input net.Conn, output net.Conn) (err error) {
 		dataBuf := make([]byte, dataLen)
 		n, err = io.ReadFull(input, dataBuf)
 		if err != nil {
-			fmt.Println(err)
-			break
+			return err
 		}
 		if n > 0 {
 			upData, err := UnPackData(dataBuf)

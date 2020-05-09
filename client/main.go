@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -13,10 +14,8 @@ import (
 )
 
 var (
-	Commands = []string{"CONNECT", "BIND", "UDP ASSOCIATE"}
+	// Commands = []string{"CONNECT", "BIND", "UDP ASSOCIATE"}
 	AddrType = []string{"", "IPv4", "", "Domain", "IPv6"}
-	Conns    = make([]net.Conn, 0)
-	Verbose  = false
 
 	errAddrType      = errors.New("socks addr type not supported")
 	errVer           = errors.New("socks version not supported")
@@ -28,6 +27,7 @@ var (
 
 const (
 	wearServerAddr = "127.0.0.1:8082" //"23.106.157.33:8082"
+	port           = "8081"
 )
 
 func shake(conn net.Conn) (err error) {
@@ -101,18 +101,16 @@ func parseAddr(conn net.Conn) (host string, err error) {
 	case 3:
 		host = string(buf[5 : 5+buf[4]])
 	}
-
 	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
-	// fmt.Println(host, buf[reqLen-2: reqLen], port)
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-
 	return
 }
 
 func pipWhenClose(conn net.Conn, target string) error {
+	// 与wear服务器建立连接
 	serverConn, err := net.DialTimeout("tcp", wearServerAddr, time.Duration(time.Second*15))
 	if err != nil {
-		fmt.Println("connect server error:", target, err)
+		log.Println("connect wear server error:", target, err)
 		return err
 	}
 	bAddr := []byte(target)
@@ -120,10 +118,8 @@ func pipWhenClose(conn net.Conn, target string) error {
 	if err != nil {
 		return err
 	}
-	// msg := append(utils.Int8ToBytes(len(bAddr)), bAddr...)
 	serverConn.Write(packbAddr)
 	tcpAddr := serverConn.LocalAddr().(*net.TCPAddr)
-
 	req := make([]byte, 256)
 	req[0] = 0x05
 	req[1] = 0x00
@@ -147,29 +143,39 @@ func pipWhenClose(conn net.Conn, target string) error {
 func handConn(conn net.Conn) {
 	defer conn.Close()
 	if err := shake(conn); err != nil {
-		fmt.Println("socks handshake error")
+		log.Println("socks handshake error")
 		return
 	}
 
 	host, err := parseAddr(conn)
 	if err != nil {
-		fmt.Println("socks addr parse error")
+		log.Println("socks addr parse error")
 		return
 	}
-	pipWhenClose(conn, host)
+	log.Println(host)
+	err = pipWhenClose(conn, host)
+	if err != nil {
+		log.Println("wear server data communication failed", host)
+		return
+	}
+}
+
+func init() {
+	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
+	return
 }
 
 func main() {
-	l, err := net.Listen("tcp", "127.0.0.1:8081")
+	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
+	l, err := net.Listen("tcp", "127.0.0.1:"+port)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("start client...")
+	log.Printf("start client on %s ...", port)
 	for {
 		conn, err := l.Accept()
-		fmt.Println("connect")
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			continue
 		}
 		go handConn(conn)
