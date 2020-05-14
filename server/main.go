@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"io"
 	"log"
 	"net"
@@ -12,6 +13,7 @@ import (
 
 var (
 	port = "8082"
+	h    = false
 	// Commands = []string{"CONNECT", "BIND", "UDP ASSOCIATE"}
 	AddrType = []string{"", "IPv4", "", "Domain", "IPv6"}
 
@@ -68,8 +70,18 @@ func handConn(conn net.Conn) {
 	utils.NetEncodeCopy(remoteConn, conn)
 }
 
-func main() {
+func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
+	flag.BoolVar(&h, "h", false, "this help")
+	flag.StringVar(&port, "p", "8082", "port")
+	flag.Parse()
+}
+
+func main() {
+	if h {
+		flag.Usage()
+		return
+	}
 	l, err := net.Listen("tcp", "0.0.0.0:"+port)
 	if err != nil {
 		panic(err)
