@@ -74,8 +74,7 @@ func parseAddr(conn net.Conn) (host string, err error) {
 	reqLen := -1
 	switch buf[3] {
 	case 1: //ipv4
-		fmt.Println("not support ipv4")
-		return
+		reqLen = 4 + (3 + 1 + 2) // ip addr len plus (header + port len)
 	case 3: //domain
 		reqLen = int(buf[4]) + (3 + 1 + 1 + 2) //(3 + 1 + 1 + 2) 3 + 1addrType + 1addrLen + 2port, plus addrLen
 	case 4: //ipv6
@@ -85,19 +84,20 @@ func parseAddr(conn net.Conn) (host string, err error) {
 		err = errAddrType
 		return
 	}
-
 	if n == reqLen {
-
 	} else if n < reqLen {
 		if _, err = io.ReadFull(conn, buf[n:reqLen]); err != nil {
+			log.Println(err)
 			return
 		}
 	} else {
+		log.Println("get over")
 		err = errReqExtraData
 		return
 	}
-
 	switch buf[3] {
+	case 1: //ipv4
+		host = strconv.Itoa(int(buf[4])) + "." + strconv.Itoa(int(buf[5])) + "." + strconv.Itoa(int(buf[6])) + "." + strconv.Itoa(int(buf[7]))
 	case 3:
 		host = string(buf[5 : 5+buf[4]])
 	}
@@ -143,7 +143,7 @@ func pipWhenClose(conn net.Conn, target string) error {
 func handConn(conn net.Conn) {
 	defer conn.Close()
 	if err := shake(conn); err != nil {
-		log.Println("socks handshake error")
+		log.Println("socks handshake error", err)
 		return
 	}
 
