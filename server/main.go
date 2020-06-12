@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"time"
 
 	"../utils"
 )
@@ -26,26 +25,17 @@ var (
 )
 
 func shake(conn net.Conn) (target string, err error) {
-	buf := make([]byte, 258)
-	var n int
-	if n, err = io.ReadAtLeast(conn, buf, 1); err != nil {
+	lenBuf := make([]byte, 1)
+	if _, err = io.ReadFull(conn, lenBuf); err != nil {
 		log.Println(err)
-		return
+		return "", err
 	}
-
-	dmLen := int(buf[0])
-	msgLen := dmLen + 1
-	if n == msgLen {
-	} else if n < msgLen {
-		if _, err = io.ReadFull(conn, buf[n:msgLen]); err != nil {
-			log.Println("get full failed")
-			return "", err
-		}
-	} else {
-		log.Printf("dmLen %v, getLen %v\n", dmLen, n)
-		// return errors.New("auth error")
+	buf := make([]byte, int(lenBuf[0]))
+	if _, err = io.ReadFull(conn, buf); err != nil {
+		log.Println("get full failed")
+		return "", err
 	}
-	addr, err := utils.UnPackData(buf[1 : 1+dmLen])
+	addr, err := utils.UnPackData(buf)
 	if err != nil {
 		return "", err
 	}
@@ -53,19 +43,25 @@ func shake(conn net.Conn) (target string, err error) {
 }
 
 func handConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		conn.Close()
+		// log.Println("close client connection:", conn)
+	}()
 	addr, err := shake(conn)
 	if err != nil {
 		log.Println("shake error", err)
 		return
 	}
-	log.Println(addr)
-	remoteConn, err := net.DialTimeout("tcp", addr, time.Duration(time.Second*15))
+	log.Println(conn.RemoteAddr(), "->", addr)
+	remoteConn, err := net.Dial("tcp", addr)
 	if err != nil {
 		log.Println("connect server error:", addr, err)
 		return
 	}
-	defer remoteConn.Close()
+	defer func() {
+		remoteConn.Close()
+		// log.Println("close remote connection:", addr)
+	}()
 	go utils.NetDecodeCopy(conn, remoteConn)
 	utils.NetEncodeCopy(remoteConn, conn)
 }

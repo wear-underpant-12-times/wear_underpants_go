@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"../utils"
@@ -56,7 +57,7 @@ func shake(conn net.Conn) (err error) {
 	return
 }
 
-func parseAddr(conn net.Conn) (host string, err error) {
+func parseAddr(conn net.Conn) (host string, addrType int, err error) {
 	buf := make([]byte, 256)
 	var n int
 	if n, err = io.ReadAtLeast(conn, buf, 5); err != nil {
@@ -72,6 +73,7 @@ func parseAddr(conn net.Conn) (host string, err error) {
 	}
 
 	reqLen := -1
+	addrType = int(buf[3])
 	switch buf[3] {
 	case 1: //ipv4
 		reqLen = 4 + (3 + 1 + 2) // ip addr len plus (header + port len)
@@ -106,7 +108,7 @@ func parseAddr(conn net.Conn) (host string, err error) {
 	return
 }
 
-func pipWhenClose(conn net.Conn, target string) error {
+func pipWhenClose(conn net.Conn, target string, addrType int) error {
 	// 与wear服务器建立连接
 	serverConn, err := net.DialTimeout("tcp", wearServerAddr, time.Duration(time.Second*15))
 	if err != nil {
@@ -124,16 +126,33 @@ func pipWhenClose(conn net.Conn, target string) error {
 	req[0] = 0x05
 	req[1] = 0x00
 	req[2] = 0x00
-	req[3] = 0x01 //注意：按照标准协议，返回的应该是对应的address_type，但是实际测试发现，当address_type=3，也就是说是域名类型时，会出现卡死情况，但是将address_type该为1，则不管是IP类型和域名类型都能正常运行
-	ip := tcpAddr.IP.To4()
-	pindex := 4
-	for _, b := range ip {
-		req[pindex] = b
-		pindex++
+	if addrType == 1 {
+		req[3] = 0x01 //注意：按照标准协议，返回的应该是对应的address_type，但是实际测试发现，当address_type=3，也就是说是域名类型时，会出现卡死情况，但是将address_type该为1，则不管是IP类型和域名类型都能正常运行
+		ip := tcpAddr.IP.To4()
+		pindex := 4
+		for _, b := range ip {
+			req[pindex] = b
+			pindex++
+		}
+		req[pindex] = byte((tcpAddr.Port >> 8) & 0xff)
+		req[pindex+1] = byte(tcpAddr.Port & 0xff)
+		conn.Write(req[0 : pindex+2])
+	} else if addrType == 3 {
+		header := []byte{5, 0, 0, 3}
+		domain := strings.Split(target, ":")[0]
+		bDomain := []byte(domain)
+		dLen := utils.Int8ToBytes(len(bDomain))
+		port, _ := strconv.Atoi(strings.Split(target, ":")[1])
+		bPort := utils.Int16ToBytes(port)
+		res, _ := utils.MergeBytes([][]byte{
+			header,
+			dLen,
+			bDomain,
+			bPort,
+		})
+		conn.Write(res)
 	}
-	req[pindex] = byte((tcpAddr.Port >> 8) & 0xff)
-	req[pindex+1] = byte(tcpAddr.Port & 0xff)
-	conn.Write(req[0 : pindex+2])
+
 	defer serverConn.Close()
 	go utils.NetEncodeCopy(conn, serverConn)
 	utils.NetDecodeCopy(serverConn, conn)
@@ -147,13 +166,13 @@ func handConn(conn net.Conn) {
 		return
 	}
 
-	host, err := parseAddr(conn)
+	host, addrType, err := parseAddr(conn)
 	if err != nil {
 		log.Println("socks addr parse error")
 		return
 	}
 	log.Println(host)
-	err = pipWhenClose(conn, host)
+	err = pipWhenClose(conn, host, addrType)
 	if err != nil {
 		log.Println("wear server data communication failed", host)
 		return

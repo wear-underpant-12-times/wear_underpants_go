@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	"time"
 )
 
 func PackHeader(data []byte) (msgData []byte, err error) {
@@ -47,13 +49,16 @@ func UnPackData(data []byte) (msg []byte, err error) {
 func NetEncodeCopy(input net.Conn, output net.Conn) (err error) {
 	buf := make([]byte, 8192)
 	for {
+		input.SetDeadline(time.Now().Local().Add(time.Second * time.Duration(30)))
 		count, err := input.Read(buf)
 		if err != nil {
 			if err == io.EOF && count > 0 {
 				data, err := PackData(buf[:count])
 				if err != nil {
-					continue
+					log.Println("pack data error")
+					break
 				}
+				output.SetDeadline(time.Now().Local().Add(time.Second * time.Duration(30)))
 				output.Write(data)
 			}
 			break
@@ -61,7 +66,8 @@ func NetEncodeCopy(input net.Conn, output net.Conn) (err error) {
 		if count > 0 {
 			data, err := PackData(buf[:count])
 			if err != nil {
-				continue
+				log.Println("pack data error")
+				break
 			}
 			output.Write(data)
 		}
@@ -72,12 +78,10 @@ func NetEncodeCopy(input net.Conn, output net.Conn) (err error) {
 func NetDecodeCopy(input net.Conn, output net.Conn) (err error) {
 	buf := make([]byte, 2)
 	for {
+		input.SetDeadline(time.Now().Local().Add(time.Second * time.Duration(30)))
 		n, err := io.ReadAtLeast(input, buf, 2)
 		if err != nil {
 			return err
-		}
-		if n < 2 {
-			break
 		}
 		dataLen := binary.BigEndian.Uint16(buf)
 		dataBuf := make([]byte, dataLen)
@@ -90,6 +94,7 @@ func NetDecodeCopy(input net.Conn, output net.Conn) (err error) {
 			if err != nil {
 				fmt.Println(err)
 			} else {
+				output.SetDeadline(time.Now().Local().Add(time.Second * time.Duration(30)))
 				output.Write(upData)
 			}
 		}
