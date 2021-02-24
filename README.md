@@ -1,27 +1,18 @@
 ![](/images/head.jpeg)
 
+[Android端](https://github.com/wear-underpant-12-times/wear_underpant_android)
+
 ## 使用方法
 
-[下载](https://github.com/wear-underpant-12-times/wear_underpants_go/releases/tag/0.0.11)对应操作系统的二进制包。
-### 客户端
-```
-$ ./client.exe -h
-Usage of C:\Users\Administrator\Desktop\mycode\wear_underpants_go\client\client.exe:
-  -addr string    # 服务器地址，格式 ip:port
-        remote addr:port (default "127.0.0.1:8082")
-  -h    this help
-  -p string       # 本地socks5端口
-        local socks5 port (default "8081")
-
 
 ```
-### 服务器
-```
-[root@23 server]# ./server -h
-Usage of ./server:
-  -h    this help
-  -p string # 端口号
-        port (default "8082")
+-m 模式：服务端/客户端（server/client）
+-p 本地端口
+-addr 服务器地址端口
+
+Eg：
+$ go run main.go -m server -p 8082  // 在8082端口启动服务器
+$ go run main.go -m client -p 8082 -addr 123.123.123.123:8082     // 在8082端口启动cosk5客户端，连接远程服务器123.123.123.123:8082
 ```
 
 ## 协议

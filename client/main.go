@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -30,6 +29,10 @@ var (
 	localPort      = "8081"
 	wearServerAddr = "23.106.157.33:8082"
 	udpListener    = &net.UDPConn{}
+	STOP_FLAG      = false
+)
+var (
+	tcpListener net.Listener
 )
 
 func shake(conn net.Conn) (err error) {
@@ -69,10 +72,10 @@ func parseAddr(conn net.Conn) (host string, addrType int, cmdType int, err error
 		err = errVer
 		return
 	}
-	// if buf[1] != 0x01 {
-	// 	err = errCmd
-	// 	return
-	// }
+	if buf[1] == 0x03 {
+		log.Println("udp request", buf)
+		return
+	}
 	// log.Println("method type", buf[1])
 	cmdType = int(buf[1])
 	reqLen := -1
@@ -196,7 +199,7 @@ func handConn(conn net.Conn) {
 	} else if cmdType == 3 {
 		// https://blog.csdn.net/whatday/article/details/40183555
 		// UDP穿透应答
-		iPort, err := strconv.Atoi(localPort)
+		iPort, _ := strconv.Atoi(localPort)
 		udpAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: iPort}
 		req := make([]byte, 256)
 		req[0] = 0x05
@@ -212,72 +215,111 @@ func handConn(conn net.Conn) {
 		req[pindex] = byte((udpAddr.Port >> 8) & 0xff)
 		req[pindex+1] = byte(udpAddr.Port & 0xff)
 		conn.Write(req[0 : pindex+2])
+		// 这里应该记录udp客户端要发送的地址(也就是host)到一个map，然后单独开一个udplistener协程来处理udp数据
+		log.Println("udp host", host, udpAddr)
 		// 获取到应用的udp数据
-		data := make([]byte, 1024)
-		n, remoteAddr, _ := udpListener.ReadFromUDP(data)
-		log.Println("udp(dns data):", remoteAddr, data[:n])
-		// log.Println("socks5 udp header:", data[:10])
-		// 将data发送到wear server
-		uaddr, err := net.ResolveUDPAddr("udp", wearServerAddr)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		udpConn, err := net.DialUDP("udp", nil, uaddr)
-		if err != nil {
-			log.Println(err)
-		}
-		defer udpConn.Close()
-		_, err = udpConn.Write(data[:n])
-		if err != nil {
-			fmt.Println("failed:", err)
-		}
-		rdata := make([]byte, 1024)
-		// 返回udp数据，写入到data
-		n, err = udpConn.Read(rdata)
-		if err != nil {
-			log.Println("get udp data failed", err)
-		}
-		// 发送到udp(基本都是dns)服务器
-		// srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-		// dstAddr := &net.UDPAddr{IP: net.IP(data[4:8]), Port: int(binary.BigEndian.Uint16(data[8:10]))}
-		// dnsConn, err := net.DialUDP("udp", srcAddr, dstAddr)
+		// data := make([]byte, 1024)
+		// n, remoteAddr, _ := udpListener.ReadFromUDP(data)
+		// log.Println("udp(dns data):", remoteAddr, data[:n])
+		// // 将data发送到wear server
+		// // uaddr, err := net.ResolveUDPAddr("udp", wearServerAddr)
+		// uaddr, err := net.ResolveUDPAddr("udp", "192.168.137.1:8888")
 		// if err != nil {
 		// 	log.Println(err)
+		// 	return
 		// }
-		// defer dnsConn.Close()
-		// dnsConn.Write(data[10:n])
-		// n, err = dnsConn.Read(data)
+		// udpConn, err := net.DialUDP("udp", nil, uaddr)
+		// if err != nil {
+		// 	log.Println(err)
+		// 	return
+		// }
+		// defer udpConn.Close()
+		// _, err = udpConn.Write(data[:n])
+		// if err != nil {
+		// 	fmt.Println("failed:", err)
+		// 	return
+		// }
+		// rdata := make([]byte, 1024)
+		// // 返回udp数据，写入到data
+		// n, err = udpConn.Read(rdata)
 		// if err != nil {
 		// 	log.Println("get udp data failed", err)
+		// 	return
 		// }
-
-		// 再将数据打包返回
-		h := []byte{0, 0, 0, 1}
-		addr := data[4:8]
-		// ip = remoteAddr.IP.To4()
-		// pindex = 0
-		// for _, b := range ip {
-		// 	addr[pindex] = b
-		// 	pindex++
-		// }
-		// log.Println(addr)
-		// dstPort := utils.Int16ToBytes(remoteAddr.Port)
-		dstPort := data[8:10]
-		decoded1, err := base64.StdEncoding.DecodeString(string(rdata[:n]))
-		if err != nil {
-			log.Println("decode udp data error:", err)
-			return
-		}
-		res, _ := utils.MergeBytes([][]byte{
-			h,
-			addr,
-			dstPort,
-			decoded1,
-		})
-		_, err = udpListener.WriteToUDP(res, remoteAddr)
-		log.Println("goRetrun udp(dns) data:", err, decoded1)
+		// // 再将数据打包返回
+		// // h := []byte{0, 0, 0, 1}
+		// // addr := data[4:8]
+		// // dstPort := data[8:10]
+		// res := append(data[:10], rdata[:n]...)
+		// _, err = udpListener.WriteToUDP(res, remoteAddr)
+		// log.Println("goRetrun udp(dns) data:", err, remoteAddr, res)
 	}
+	// else if cmdType == 3 {
+	// 	// https://blog.csdn.net/whatday/article/details/40183555
+	// 	// UDP穿透应答
+	// 	iPort, err := strconv.Atoi(localPort)
+	// 	udpAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: iPort}
+	// 	req := make([]byte, 256)
+	// 	req[0] = 0x05
+	// 	req[1] = 0x00
+	// 	req[2] = 0x00
+	// 	req[3] = 0x01 //注意：按照标准协议，返回的应该是对应的address_type，但是实际测试发现，当address_type=3，也就是说是域名类型时，会出现卡死情况，但是将address_type该为1，则不管是IP类型和域名类型都能正常运行
+	// 	ip := udpAddr.IP.To4()
+	// 	pindex := 4
+	// 	for _, b := range ip {
+	// 		req[pindex] = b
+	// 		pindex++
+	// 	}
+	// 	req[pindex] = byte((udpAddr.Port >> 8) & 0xff)
+	// 	req[pindex+1] = byte(udpAddr.Port & 0xff)
+	// 	conn.Write(req[0 : pindex+2])
+	// 	// 获取到应用的udp数据
+	// 	data := make([]byte, 1024)
+	// 	n, remoteAddr, _ := udpListener.ReadFromUDP(data)
+	// 	log.Println("udp(dns data):", remoteAddr, data[:n])
+	// 	// log.Println("socks5 udp header:", data[:10])
+	// 	// 将data发送到wear server
+	// 	uaddr, err := net.ResolveUDPAddr("udp", wearServerAddr)
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 		return
+	// 	}
+	// 	udpConn, err := net.DialUDP("udp", nil, uaddr)
+	// 	if err != nil {
+	// 		log.Println(err)
+	// 		return
+	// 	}
+	// 	defer udpConn.Close()
+	// 	_, err = udpConn.Write(data[:n])
+	// 	if err != nil {
+	// 		fmt.Println("failed:", err)
+	// 		return
+	// 	}
+	// 	rdata := make([]byte, 1024)
+	// 	// 返回udp数据，写入到data
+	// 	n, err = udpConn.Read(rdata)
+	// 	if err != nil {
+	// 		log.Println("get udp data failed", err)
+	// 		return
+	// 	}
+	// 	// 再将数据打包返回
+	// 	h := []byte{0, 0, 0, 1}
+	// 	addr := data[4:8]
+	// 	dstPort := data[8:10]
+	// 	decoded1, err := base64.StdEncoding.DecodeString(string(rdata[:n]))
+	// 	if err != nil {
+	// 		log.Println("decode udp data error:", err)
+	// 		return
+	// 	}
+	// 	res, _ := utils.MergeBytes([][]byte{
+	// 		h,
+	// 		addr,
+	// 		dstPort,
+	// 		decoded1,
+	// 	})
+	// 	_, err = udpListener.WriteToUDP(res, remoteAddr)
+	// 	log.Println("goRetrun udp(dns) data:", err, decoded1)
+	// }
 }
 
 // func init() {
@@ -295,12 +337,19 @@ func StartClient(localProxyPort string, remoteAddr string) {
 	start()
 }
 
+func Stop() {
+	STOP_FLAG = true
+	tcpListener.Close()
+	udpListener.Close()
+}
+
 func start() {
+	STOP_FLAG = false
 	iPort, err := strconv.Atoi(localPort)
 	if err != nil {
 		panic(err)
 	}
-	l, err := net.Listen("tcp", "127.0.0.1:"+localPort)
+	tcpListener, err = net.Listen("tcp", "127.0.0.1:"+localPort)
 	if err != nil {
 		panic(err)
 	}
@@ -310,14 +359,15 @@ func start() {
 	}
 	log.Printf("start client on %s ...", localPort)
 	log.Printf("wear server %s", wearServerAddr)
-	for {
-		conn, err := l.Accept()
+	for !STOP_FLAG {
+		conn, err := tcpListener.Accept()
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 		go handConn(conn)
 	}
+	log.Printf("stop wear server")
 }
 
 // func main() {

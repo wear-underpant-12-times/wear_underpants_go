@@ -1,10 +1,8 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -47,41 +45,37 @@ func shake(conn net.Conn) (target string, err error) {
 	return string(addr), nil
 }
 
-func handleUDPConn(conn *net.UDPConn) {
-	data := make([]byte, 65535)
-	n, remoteAddr, err := conn.ReadFromUDP(data)
-	go func() {
-		if err != nil {
-			fmt.Println("failed to read UDP msg because of ", err.Error())
-			return
-		}
-		log.Println("recieve udp request:", remoteAddr, data[:n])
-		// 发送到udp(基本都是dns)服务器
-		srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-		dstAddr := &net.UDPAddr{IP: net.IP(data[4:8]), Port: int(binary.BigEndian.Uint16(data[8:10]))}
-		dnsConn, err := net.DialUDP("udp", srcAddr, dstAddr)
-		if err != nil {
-			log.Println(err)
-		}
-		defer dnsConn.Close()
-		dnsConn.Write(data[10:n])
-		// 返回
-		n, err = dnsConn.Read(data)
-		if err != nil {
-			log.Println("get udp data failed", err)
-		}
-		res := base64.StdEncoding.EncodeToString(data[:n])
-		if err != nil {
-			log.Println("pack udp data error:", data[:n])
-		}
+func handleUDPConn(data []byte, n int, remoteAddr *net.UDPAddr) {
+	log.Println("udp:", remoteAddr, "->", net.IP(data[4:8]))
+	// log.Println("recieve udp request:", remoteAddr, data[:n])
+	// 发送到udp(基本都是dns)服务器
+	srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
+	dstAddr := &net.UDPAddr{IP: net.IP(data[4:8]), Port: int(binary.BigEndian.Uint16(data[8:10]))}
+	dnsConn, err := net.DialUDP("udp", srcAddr, dstAddr)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer dnsConn.Close()
+	dnsConn.Write(data[10:n])
+	// log.Println("sendUdp", data[10:n])
+	// 返回
+	n, err = dnsConn.Read(data)
+	if err != nil {
+		log.Println("get udp data failed", err)
+	}
+	// log.Println("getUdp", data[:n])
+	// res := base64.StdEncoding.EncodeToString(data[:n])
+	if err != nil {
+		log.Println("pack udp data error:", data[:n])
+	}
 
-		// res, _ := utils.MergeBytes([][]byte{
-		// 	[]byte{112},
-		// 	data[:n],
-		// })
-		_, err = conn.WriteToUDP([]byte(res), remoteAddr)
-		log.Println("return udp", err, res)
-	}()
+	// res, _ := utils.MergeBytes([][]byte{
+	// 	[]byte{112},
+	// 	data[:n],
+	// })
+	_, err = udpListener.WriteToUDP(data[:n], remoteAddr)
+	// log.Println("return udp", err, data[:n])
 }
 
 func handConn(conn net.Conn) {
@@ -132,9 +126,19 @@ func StartServer(port string) {
 		panic(err)
 	}
 	log.Printf("start server on %s ...", port)
+	data := make([]byte, 65535)
 	go func() {
 		for {
-			handleUDPConn(udpListener)
+			n, remoteAddr, err := udpListener.ReadFromUDP(data)
+			if err != nil {
+				log.Println("failed to read UDP msg because of ", err.Error())
+				continue
+			}
+			if n >= 10 && n <= 65535 {
+				go handleUDPConn(data, n, remoteAddr)
+			} else {
+				log.Println("error: udp data length is less then 10.", n)
+			}
 		}
 	}()
 	for {

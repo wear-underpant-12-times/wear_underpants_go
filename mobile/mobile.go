@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/eycorsican/go-tun2socks/core"
@@ -22,7 +23,12 @@ func InputPacket(data []byte) {
 	lwipStack.Write(data)
 }
 
-func StartSocks(packetFlow PacketFlow, proxyHost string, proxyPort int) {
+func Stop() {
+	client.Stop()
+	lwipStack.Close()
+}
+
+func StartSocks(packetFlow PacketFlow, proxyHost string, proxyPort int, addr string) {
 	if packetFlow != nil {
 		lwipStack = core.NewLWIPStack()
 		core.RegisterTCPConnHandler(socks.NewTCPHandler(proxyHost, uint16(proxyPort)))
@@ -31,5 +37,6 @@ func StartSocks(packetFlow PacketFlow, proxyHost string, proxyPort int) {
 			packetFlow.WritePacket(data)
 			return len(data), nil
 		})
+		go client.StartClient(strconv.Itoa(proxyPort), addr)
 	}
 }
