@@ -1,4 +1,4 @@
-![](/images/head.jpeg)
+# 简易代理
 
 [Android端](https://github.com/wear-underpant-12-times/wear_underpant_android)
 
